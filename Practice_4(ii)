@@ -1,0 +1,106 @@
+-- =====================================================
+-- StudentEnrollments Transaction and Locking Simulation
+-- Demonstrating Concurrency Control with Locking
+-- =====================================================
+
+-- Drop existing table if any
+DROP TABLE IF EXISTS StudentEnrollments;
+
+-- Create StudentEnrollments table
+CREATE TABLE StudentEnrollments (
+    enrollment_id INT PRIMARY KEY,
+    student_name VARCHAR(100) NOT NULL,
+    course_id VARCHAR(10) NOT NULL,
+    enrollment_date DATE NOT NULL,
+    CONSTRAINT unique_enrollment UNIQUE (student_name, course_id)
+);
+
+-- =====================================================
+-- Part A: Prevent Duplicate Enrollments Using Locking
+-- Demonstrates: Only one insert allowed per (student_name, course_id)
+-- =====================================================
+
+-- Insert initial sample data
+INSERT INTO StudentEnrollments (enrollment_id, student_name, course_id, enrollment_date)
+VALUES 
+(1, 'Ashish', 'CSE101', '2024-07-01'),
+(2, 'Smaran', 'CSE102', '2024-07-01'),
+(3, 'Vaibhav', 'CSE101', '2024-07-01');
+
+-- Simulate two concurrent users trying to insert the same enrollment
+-- Session A:
+START TRANSACTION;
+INSERT INTO StudentEnrollments (enrollment_id, student_name, course_id, enrollment_date)
+VALUES (4, 'Ashish', 'CSE101', '2024-07-02');
+COMMIT;
+
+-- Session B (at the same time, duplicate insert):
+START TRANSACTION;
+INSERT INTO StudentEnrollments (enrollment_id, student_name, course_id, enrollment_date)
+VALUES (5, 'Ashish', 'CSE101', '2024-07-03');
+-- This will fail due to UNIQUE constraint violation
+ROLLBACK;
+
+-- Verify results
+SELECT * FROM StudentEnrollments;
+
+-- =====================================================
+-- Part B: Use SELECT FOR UPDATE to Lock Student Record
+-- Demonstrates row-level locking
+-- =====================================================
+
+-- Session A:
+START TRANSACTION;
+SELECT * FROM StudentEnrollments
+WHERE student_name = 'Ashish' AND course_id = 'CSE101'
+FOR UPDATE;
+
+-- Row is locked, Session A has not yet committed or rolled back
+
+-- Session B (running while A is open):
+START TRANSACTION;
+UPDATE StudentEnrollments
+SET enrollment_date = '2024-07-10'
+WHERE student_name = 'Ashish' AND course_id = 'CSE101';
+-- Session B will be BLOCKED until Session A commits/rolls back
+
+-- Session A finishes:
+COMMIT;
+
+-- Now Session B continues and applies its update
+COMMIT;
+
+-- Verify results
+SELECT * FROM StudentEnrollments;
+
+-- =====================================================
+-- Part C: Demonstrate Locking Preserving Consistency
+-- Shows how locking avoids race conditions in concurrent updates
+-- =====================================================
+
+-- Reset a row for demonstration
+UPDATE StudentEnrollments
+SET enrollment_date = '2024-07-01'
+WHERE student_name = 'Ashish' AND course_id = 'CSE101';
+
+-- Session A:
+START TRANSACTION;
+SELECT * FROM StudentEnrollments
+WHERE student_name = 'Ashish' AND course_id = 'CSE101'
+FOR UPDATE;
+UPDATE StudentEnrollments
+SET enrollment_date = '2024-07-15'
+WHERE student_name = 'Ashish' AND course_id = 'CSE101';
+COMMIT;
+
+-- Session B (runs after A, serialized due to lock):
+START TRANSACTION;
+UPDATE StudentEnrollments
+SET enrollment_date = '2024-07-20'
+WHERE student_name = 'Ashish' AND course_id = 'CSE101';
+COMMIT;
+
+-- Final table state (consistent, last update wins, no corruption)
+SELECT * FROM StudentEnrollments;
+
+-- End of File
