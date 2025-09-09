@@ -1,0 +1,109 @@
+-- =====================================================
+-- Database Concurrency Control Demonstration: Deadlocks & MVCC
+-- =====================================================
+
+-- =========================
+-- Common Setup
+-- =========================
+DROP TABLE IF EXISTS StudentEnrollments;
+
+CREATE TABLE StudentEnrollments (
+    student_id INT PRIMARY KEY,
+    student_name VARCHAR(100),
+    course_id VARCHAR(10),
+    enrollment_date DATE
+);
+
+INSERT INTO StudentEnrollments (student_id, student_name, course_id, enrollment_date) VALUES
+(1, 'Ashish', 'CSE101', '2024-06-01'),
+(2, 'Smaran', 'CSE102', '2024-06-01'),
+(3, 'Vaibhav', 'CSE103', '2024-06-01');
+
+-- =====================================================
+-- Part A: Simulating a Deadlock Between Two Transactions
+-- =====================================================
+
+-- Session 1 (User A)
+-- ------------------
+-- START TRANSACTION;
+-- UPDATE StudentEnrollments SET enrollment_date = '2024-06-15' WHERE student_id = 1;
+-- (Holds lock on student_id=1)
+-- UPDATE StudentEnrollments SET enrollment_date = '2024-06-20' WHERE student_id = 2;
+-- (Waits for Session 2)
+
+-- Session 2 (User B)
+-- ------------------
+-- START TRANSACTION;
+-- UPDATE StudentEnrollments SET enrollment_date = '2024-06-18' WHERE student_id = 2;
+-- (Holds lock on student_id=2)
+-- UPDATE StudentEnrollments SET enrollment_date = '2024-06-25' WHERE student_id = 1;
+-- (Waits for Session 1)
+-- >>> DEADLOCK occurs. DB aborts one transaction automatically.
+
+-- Expected Output:
+-- "Transaction 2 aborted due to deadlock" (depending on DB engine).
+
+
+-- =====================================================
+-- Part B: Applying MVCC to Prevent Conflicts
+-- =====================================================
+
+-- Session 1 (User A - Reader)
+-- ---------------------------
+-- START TRANSACTION;
+-- SELECT enrollment_date FROM StudentEnrollments WHERE student_id = 1;
+-- (Reads snapshot: '2024-06-01')
+-- -- keeps transaction open
+
+-- Session 2 (User B - Writer)
+-- ---------------------------
+-- START TRANSACTION;
+-- UPDATE StudentEnrollments SET enrollment_date = '2024-07-10' WHERE student_id = 1;
+-- COMMIT;
+
+-- Session 1 (User A still in transaction)
+-- ---------------------------------------
+-- SELECT enrollment_date FROM StudentEnrollments WHERE student_id = 1;
+-- (Still sees '2024-06-01' due to MVCC snapshot)
+
+-- After User A commits, new reads will show updated value: '2024-07-10'.
+
+
+-- =====================================================
+-- Part C: Comparing With and Without MVCC
+-- =====================================================
+
+-- Case 1: Traditional Locking (no MVCC)
+-- -------------------------------------
+-- Session 1:
+-- START TRANSACTION;
+-- SELECT enrollment_date FROM StudentEnrollments WHERE student_id = 1 FOR UPDATE;
+-- (Row locked)
+
+-- Session 2:
+-- START TRANSACTION;
+-- SELECT enrollment_date FROM StudentEnrollments WHERE student_id = 1;
+-- (Blocked until Session 1 commits)
+
+-- Case 2: MVCC (with snapshot isolation)
+-- --------------------------------------
+-- Session 1:
+-- START TRANSACTION ISOLATION LEVEL REPEATABLE READ;
+-- SELECT enrollment_date FROM StudentEnrollments WHERE student_id = 1;
+-- (Reads '2024-07-10')
+
+-- Session 2:
+-- START TRANSACTION;
+-- UPDATE StudentEnrollments SET enrollment_date = '2024-07-20' WHERE student_id = 1;
+-- COMMIT;
+
+-- Session 1 (still in same transaction):
+-- SELECT enrollment_date FROM StudentEnrollments WHERE student_id = 1;
+-- (Still sees '2024-07-10' because of snapshot)
+
+-- After Session 1 commits, it will see '2024-07-20' on next read.
+
+
+-- =====================================================
+-- End of Script
+-- =====================================================
